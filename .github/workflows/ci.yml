@@ -1,0 +1,94 @@
+# CI for pdf-stamp
+#
+# The gate itself is in `.github/scripts/check.sh`, not here, so release.yml
+# runs exactly the same set before it publishes anything. A second list of
+# steps drifts, and the half that drifts is always the one nobody watches.
+#
+# It runs on Linux, macOS and Windows: pdf-stamp ships as a binary that
+# writers and Scriptor's runtime container both invoke, and check.sh's
+# smoke test stamps a real page with the binary each platform built. A
+# second job does the same on Windows on ARM64, before a release depends
+# on it.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: check.sh
+        shell: bash
+        run: bash .github/scripts/check.sh
+
+  # ────────────────────────────────────────────────────────────────────
+  # Windows on ARM64, proven here before any release depends on it. The
+  # tests run natively; then the binary is built as a release would build
+  # it, with the C runtime linked in, and is checked and made to stamp a
+  # page. Nothing in the tree is C, so no ARM64 C toolchain is involved.
+  # ────────────────────────────────────────────────────────────────────
+  windows-arm64:
+    name: Windows on ARM64
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-arm64
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: cargo test
+        run: cargo test --locked --all-targets
+
+      - name: Release build, the C runtime linked in
+        shell: bash
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --locked --release --target aarch64-pc-windows-msvc --bin pdf-stamp
+
+      # What release.yml checks of every Windows binary. An import of
+      # vcruntime140.dll would mean the Visual C++ Redistributable is needed
+      # after all, and this runner, which has it installed, would not notice.
+      - name: It needs no Visual C++ runtime, and it stamps
+        shell: bash
+        run: |
+          set -eu
+          exe=target/aarch64-pc-windows-msvc/release/pdf-stamp.exe
+          if grep -a -q -i 'vcruntime140' "$exe"; then
+            echo "::error::$exe imports the Visual C++ runtime (vcruntime140.dll)" >&2
+            exit 1
+          fi
+          echo "$exe: $(wc -c < "$exe") bytes, the C runtime linked in"
+          "$exe" --version
+          bash .github/scripts/smoke.sh "$exe"
