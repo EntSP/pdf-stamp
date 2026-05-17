@@ -1,0 +1,65 @@
+# CI for pdf-stamp
+#
+# Standalone CLI + library crate, no path dependencies. Mirrors the
+# markdoc-pdf CI shape: fmt, clippy, test, release build, and a
+# smoke-test of the binary across Linux / macOS / Windows. Same
+# rationale — pdf-stamp ships as a binary that writers and the
+# Scriptor runtime container both invoke.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --all-targets
+
+      - name: cargo build --release
+        run: cargo build --release --bin pdf-stamp
+
+      - name: Smoke-test the binary
+        shell: bash
+        run: |
+          # `--help` is the cheapest end-to-end sanity check: clap
+          # successfully parsed the args, the binary linked, and we
+          # didn't crash on startup. A real stamping run requires an
+          # input PDF, which is too heavy for CI fixtures.
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./target/release/pdf-stamp.exe --help
+          else
+            ./target/release/pdf-stamp --help
+          fi

@@ -1,0 +1,27 @@
+[package]
+name = "pdf-stamp"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Per-recipient personalisation of cached PDF documents — visible watermarks and invisible (XMP / Info-dict) leak-trace metadata."
+
+[lib]
+name = "pdf_stamp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pdf-stamp"
+path = "src/main.rs"
+
+[dependencies]
+# lopdf is pure Rust and lets us mutate an existing PDF (append to
+# content streams, edit metadata) without re-rendering. Bundles its
+# own font subsetting helpers via Type1 standard fonts so the stamp
+# overlay doesn't need an external font loader.
+lopdf      = { version = "0.40", default-features = false, features = ["time"] }
+
+clap       = { version = "4.5", features = ["derive"] }
+serde      = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror  = "1.0"
+time       = { version = "0.3", default-features = false, features = ["std", "local-offset", "formatting", "macros"] }
