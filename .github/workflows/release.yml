@@ -1,15 +1,17 @@
 # Release workflow for pdf-stamp
 #
-# Triggered by pushing a tag `v*` (e.g. `v0.2.0`). Builds release
-# binaries for Linux x86_64, macOS aarch64 and Windows x86_64, then
-# publishes them as GitHub release artefacts. Mirrors the markdoc-pdf
-# release workflow.
+# Triggered by pushing a SemVer tag without a `v` prefix (e.g. `0.2.0`
+# or `0.2.0-rc1`). Builds release binaries for Linux x86_64, macOS
+# aarch64 and Windows x86_64, then publishes them as GitHub release
+# artefacts. Mirrors the markdoc-pdf release workflow.
 
 name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"     # stable:      0.2.0
+      - "[0-9]+.[0-9]+.[0-9]+-*"   # pre-release: 0.2.0-rc1, 0.2.0-beta.3
 
 permissions:
   contents: write   # needed for the release-creating step
