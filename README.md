@@ -113,7 +113,7 @@ crates small and lets Adeptus's delivery layer stitch them together.
 
 Each [release](https://github.com/EntSP/pdf-stamp/releases) carries a
 binary per platform, `pdf-stamp-<platform>`: Linux (x86-64 and ARM64),
-Windows (x86-64) and macOS (Apple Silicon and Intel). The Linux ones are
+Windows (x86-64 and ARM64) and macOS (Apple Silicon and Intel). The Linux ones are
 static, so they run on any distribution and in a `FROM scratch` image.
 Each has a `.sha256` beside it and a GitHub build-provenance attestation,
 which ties it to the commit and the workflow run that built it:
@@ -121,7 +121,13 @@ which ties it to the commit and the workflow run that built it:
 ```
 curl -LO https://github.com/EntSP/pdf-stamp/releases/latest/download/pdf-stamp-linux-x86_64
 gh attestation verify pdf-stamp-linux-x86_64 --repo EntSP/pdf-stamp
+gh attestation verify pdf-stamp-linux-x86_64 --repo EntSP/pdf-stamp \
+    --bundle pdf-stamp-linux-x86_64.sigstore.json
 ```
+
+The release carries each attestation too, as `<asset>.sigstore.json`
+beside the asset; the second form checks against that copy instead of
+asking GitHub.
 
 Or build it from crates.io: `cargo install pdf-stamp`.
 

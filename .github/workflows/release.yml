@@ -1,22 +1,27 @@
 # Release for pdf-stamp — https://github.com/EntSP/pdf-stamp
 #
-# One release publishes one binary per platform, all five from GitHub-hosted
+# One release publishes one binary per platform, all six from GitHub-hosted
 # runners, each with a `.sha256` beside it:
 #
 #   pdf-stamp-linux-x86_64          Linux, Scriptor's runtime image included
 #   pdf-stamp-linux-aarch64         Linux on ARM64
 #   pdf-stamp-windows-x86_64.exe    Windows
+#   pdf-stamp-windows-aarch64.exe   Windows on ARM64
 #   pdf-stamp-macos-aarch64         Apple Silicon
 #   pdf-stamp-macos-x86_64          Intel Macs
 #
 # The Linux ones are musl and static, so they run in a `FROM scratch` image
-# as readily as on any distribution; the Windows one carries its C runtime.
+# as readily as on any distribution; the Windows ones carry their C
+# runtime.
 #
 # Each binary also gets a GitHub build-provenance attestation, which ties
-# it to the commit and the workflow run that built it. Check a download
-# with:
+# it to the commit and the workflow run that built it. GitHub keeps it,
+# and the release carries a copy beside the binary, <asset>.sigstore.json.
+# Check a download against either:
 #
 #   gh attestation verify pdf-stamp-linux-x86_64 --repo EntSP/pdf-stamp
+#   gh attestation verify pdf-stamp-linux-x86_64 --repo EntSP/pdf-stamp \
+#       --bundle pdf-stamp-linux-x86_64.sigstore.json
 #
 # ## How a release happens
 #
@@ -76,7 +81,7 @@ jobs:
           echo "::error::${GITHUB_REF} is not main, and only main is released." >&2
           exit 1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Cargo.toml's version, and whether a tag names it yet
         id: version
@@ -92,7 +97,7 @@ jobs:
     if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -104,7 +109,7 @@ jobs:
         run: bash .github/scripts/check.sh
 
   # ────────────────────────────────────────────────────────────────────
-  # The binary, per platform. One matrix, four runner images, one release.
+  # The binary, per platform. One matrix, five runner images, one release.
   # ────────────────────────────────────────────────────────────────────
   build:
     name: ${{ matrix.slug }}
@@ -127,6 +132,9 @@ jobs:
           - { slug: linux-x86_64,   os: ubuntu-latest,    target: x86_64-unknown-linux-musl,  exe: "" }
           - { slug: linux-aarch64,  os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, exe: "" }
           - { slug: windows-x86_64, os: windows-latest,   target: x86_64-pc-windows-msvc,     exe: ".exe" }
+          # Windows on ARM64, built natively on GitHub's ARM runner. Nothing
+          # in the tree is C, so no ARM64 C toolchain is involved.
+          - { slug: windows-aarch64, os: windows-11-arm, target: aarch64-pc-windows-msvc, exe: ".exe" }
           # macos-latest is Apple Silicon, and x86_64-apple-darwin
           # cross-compiles from it because Xcode ships both slices of the
           # SDK.
@@ -134,7 +142,7 @@ jobs:
           - { slug: macos-x86_64,   os: macos-latest,     target: x86_64-apple-darwin,        exe: "" }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -149,7 +157,7 @@ jobs:
         run: |
           set -eu
           case "${{ matrix.target }}" in
-            *-unknown-linux-musl | x86_64-pc-windows-msvc)
+            *-unknown-linux-musl | *-pc-windows-msvc)
               # The C runtime linked in: no libc to match on Linux, and no
               # Visual C++ Redistributable needed on Windows.
               export RUSTFLAGS="-C target-feature=+crt-static"
@@ -241,9 +249,17 @@ jobs:
       # commit and the workflow that built it. Of the asset itself, as the
       # .sha256 is: the bytes attested are the bytes published.
       - name: Attest build provenance
+        id: attest
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: pdf-stamp-${{ matrix.slug }}${{ matrix.exe }}
+
+      # GitHub keeps the attestation; the release carries a copy too, beside
+      # the binary, where it can be seen and checked without asking GitHub:
+      #   gh attestation verify <asset> --bundle <asset>.sigstore.json --repo EntSP/pdf-stamp
+      - name: Keep the attestation with the binary
+        shell: bash
+        run: cp "${{ steps.attest.outputs.bundle-path }}" "pdf-stamp-${{ matrix.slug }}${{ matrix.exe }}.sigstore.json"
 
       - name: Upload for the release
         uses: actions/upload-artifact@v6
@@ -252,6 +268,7 @@ jobs:
           path: |
             pdf-stamp-${{ matrix.slug }}${{ matrix.exe }}
             pdf-stamp-${{ matrix.slug }}${{ matrix.exe }}.sha256
+            pdf-stamp-${{ matrix.slug }}${{ matrix.exe }}.sigstore.json
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────
@@ -272,7 +289,7 @@ jobs:
       contents: write # the release, and the tag it creates
       id-token: write # crates.io trusted publishing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -306,7 +323,7 @@ jobs:
         run: cargo publish --locked
 
       - name: Create the release, and its tag
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.version }}
           target_commitish: ${{ github.sha }}
